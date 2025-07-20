@@ -1,0 +1,44 @@
+# Cargo configuration for ai-proxy
+
+[build]
+# Number of parallel jobs, defaults to # of CPUs
+jobs = 8
+
+[term]
+# Use colors in cargo output
+color = "auto"
+
+[alias]
+# Convenience aliases for common commands
+c = "clippy"
+clippy-all = "clippy --all-targets --all-features"
+clippy-fix = "clippy --fix --allow-dirty --allow-staged"
+pedantic = "clippy -- -W clippy::pedantic"
+strict = "clippy -- -D warnings"
+
+# Build and check aliases
+b = "build"
+br = "build --release"
+ch = "check"
+chr = "check --release"
+
+# Test aliases
+t = "test"
+tn = "test --nocapture"
+
+# Format and lint workflow
+lint = "clippy --all-targets --all-features -- -D warnings"
+fmt-check = "fmt -- --check"
+pre-commit = "clippy --all-targets --all-features -- -D warnings"
+
+[profile.dev]
+# Faster builds in development
+opt-level = 0
+debug = true
+
+[profile.release]
+# Optimize for size and performance
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
