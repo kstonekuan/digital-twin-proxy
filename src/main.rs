@@ -8,15 +8,10 @@ use std::{
     io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
-    sync::Arc,
     sync::atomic::{AtomicBool, Ordering},
+    sync::Arc,
 };
-use tokio::{
-    runtime::Runtime,
-    signal,
-    task,
-    time::Duration,
-};
+use tokio::{runtime::Runtime, signal, task, time::Duration};
 
 // ------------ constants ---------------------------------------------------
 const PROXY_PORT: u16 = 8888;
@@ -79,13 +74,12 @@ fn summary_path() -> Result<PathBuf> {
 
 fn squid_config_path() -> Result<PathBuf> {
     let config_path = data_dir()?.join("squid.conf");
-    
+
     // Write the embedded config if it doesn't exist or is outdated
     if !config_path.exists() || config_needs_update(&config_path)? {
-        fs::write(&config_path, SQUID_CONFIG)
-            .context("Failed to write squid configuration")?;
+        fs::write(&config_path, SQUID_CONFIG).context("Failed to write squid configuration")?;
     }
-    
+
     Ok(config_path)
 }
 
@@ -128,14 +122,14 @@ fn find_squid_binary() -> Option<PathBuf> {
         "C:\\Program Files\\Squid\\bin\\squid.exe",
         "C:\\ProgramData\\chocolatey\\bin\\squid.exe",
     ];
-    
+
     for path in &paths {
         let p = Path::new(path);
         if p.exists() {
             return Some(p.to_path_buf());
         }
     }
-    
+
     // Try to find in PATH
     if let Ok(output) = Command::new("which").arg("squid").output() {
         if output.status.success() {
@@ -145,7 +139,7 @@ fn find_squid_binary() -> Option<PathBuf> {
             }
         }
     }
-    
+
     // Windows: try where command
     if let Ok(output) = Command::new("where").arg("squid").output() {
         if output.status.success() {
@@ -155,32 +149,32 @@ fn find_squid_binary() -> Option<PathBuf> {
             }
         }
     }
-    
+
     None
 }
 
 fn print_install_instructions() {
     eprintln!("\nSquid is not installed. Please install it using:");
     eprintln!();
-    
+
     #[cfg(target_os = "linux")]
     {
         eprintln!("  Ubuntu/Debian: sudo apt install squid");
         eprintln!("  Fedora/RHEL:  sudo dnf install squid");
         eprintln!("  Arch:         sudo pacman -S squid");
     }
-    
+
     #[cfg(target_os = "macos")]
     {
         eprintln!("  macOS: brew install squid");
     }
-    
+
     #[cfg(target_os = "windows")]
     {
         eprintln!("  Windows: choco install squid");
         eprintln!("  (requires Chocolatey package manager)");
     }
-    
+
     eprintln!();
 }
 
@@ -191,55 +185,53 @@ struct SquidProcess {
 
 impl SquidProcess {
     fn start() -> Result<Self> {
-        let squid_binary = find_squid_binary()
-            .ok_or_else(|| {
-                print_install_instructions();
-                anyhow::anyhow!("Squid is not installed")
-            })?;
-        
-        let config_path = squid_config_path()
-            .context("Failed to setup squid configuration")?;
-        
+        let squid_binary = find_squid_binary().ok_or_else(|| {
+            print_install_instructions();
+            anyhow::anyhow!("Squid is not installed")
+        })?;
+
+        let config_path = squid_config_path().context("Failed to setup squid configuration")?;
+
         println!("Starting Squid proxy on port {PROXY_PORT}...");
-        
+
         // First, initialize Squid cache directory if needed
         println!("Initializing Squid cache directory...");
         let init_output = Command::new(&squid_binary)
-            .arg("-z")  // Create cache directories
-            .arg("-f")  // Config file
+            .arg("-z") // Create cache directories
+            .arg("-f") // Config file
             .arg(&config_path)
-            .arg("-n")  // Service name
+            .arg("-n") // Service name
             .arg("aiproxy") // Same service name
             .output()
             .context("Failed to initialize Squid cache")?;
-            
+
         if !init_output.status.success() {
             let stderr = String::from_utf8_lossy(&init_output.stderr);
             if !stderr.contains("already exists") {
-                eprintln!("Warning: Squid cache initialization had issues: {}", stderr);
+                eprintln!("Warning: Squid cache initialization had issues: {stderr}");
             }
         }
-        
+
         // Start squid with our custom config
         let mut child = Command::new(&squid_binary)
             .env("SQUID_CONF_DIR", data_dir()?.to_str().unwrap_or("/tmp"))
-            .arg("-N")  // Don't run as daemon
-            .arg("-f")  // Config file
+            .arg("-N") // Don't run as daemon
+            .arg("-f") // Config file
             .arg(&config_path)
-            .arg("-d")  // Debug level
-            .arg("1")   // Minimal debug output
-            .arg("-n")  // Service name
+            .arg("-d") // Debug level
+            .arg("1") // Minimal debug output
+            .arg("-n") // Service name
             .arg("aiproxy") // Unique service name to avoid conflicts
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
             .context("Failed to start Squid process")?;
-        
+
         let running = Arc::new(AtomicBool::new(true));
-        
+
         // Give Squid a moment to start and check if it's still running
         std::thread::sleep(std::time::Duration::from_secs(2));
-        
+
         // Check if the process is still running
         match child.try_wait() {
             Ok(Some(status)) => {
@@ -249,21 +241,25 @@ impl SquidProcess {
                     use std::io::Read;
                     let _ = stderr_stream.read_to_string(&mut stderr);
                 }
-                anyhow::bail!("Squid process exited immediately with status: {:?}\nStderr: {}", status, stderr);
+                anyhow::bail!(
+                    "Squid process exited immediately with status: {:?}\nStderr: {}",
+                    status,
+                    stderr
+                );
             }
             Ok(None) => {
                 // Still running, good!
                 println!("Proxy listening on 127.0.0.1:{PROXY_PORT}");
             }
             Err(e) => {
-                eprintln!("Warning: Could not check Squid process status: {}", e);
+                eprintln!("Warning: Could not check Squid process status: {e}");
                 println!("Proxy listening on 127.0.0.1:{PROXY_PORT}");
             }
         }
-        
+
         Ok(Self { child, running })
     }
-    
+
     fn stop(&mut self) -> Result<()> {
         self.running.store(false, Ordering::SeqCst);
         self.child.kill()?;
@@ -282,16 +278,16 @@ fn parse_squid_log_line(line: &str) -> Option<String> {
     // Parse our custom log format:
     // %ts.%03tu %6tr %>a %Ss/%03>Hs %<st %rm %ru %{Host}>h %un %Sh/%<a %mt
     // Example: 1234567890.123   456 192.168.1.1 TCP_MISS/200 1234 GET http://example.com/ example.com - DIRECT/93.184.216.34 text/html
-    
+
     let parts: Vec<&str> = line.split_whitespace().collect();
     if parts.len() < 8 {
         return None;
     }
-    
+
     // parts[6] is the request URL
     // parts[7] is the Host header
     let host = parts.get(7)?;
-    
+
     // Determine protocol based on the URL
     let url = parts.get(6)?;
     if url.starts_with("http://") || url.starts_with("https://") {
@@ -307,38 +303,38 @@ fn parse_squid_log_line(line: &str) -> Option<String> {
 
 async fn monitor_squid_logs(running: Arc<AtomicBool>) -> Result<()> {
     let mut last_position = 0u64;
-    
+
     loop {
         if !running.load(Ordering::SeqCst) {
             break;
         }
-        
+
         // Check if log file exists
         if Path::new(SQUID_LOG_PATH).exists() {
             let file = fs::File::open(SQUID_LOG_PATH)?;
             let metadata = file.metadata()?;
             let current_size = metadata.len();
-            
+
             if current_size > last_position {
                 // Read new lines
                 let mut reader = BufReader::new(file);
                 reader.seek_relative(i64::try_from(last_position).unwrap_or(i64::MAX))?;
-                
-                for line in reader.lines().flatten() {
+
+                for line in reader.lines().map_while(Result::ok) {
                     if let Some(url) = parse_squid_log_line(&line) {
                         if let Err(e) = append_log(&url) {
                             eprintln!("Failed to log URL: {e}");
                         }
                     }
                 }
-                
+
                 last_position = current_size;
             }
         }
-        
+
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
-    
+
     Ok(())
 }
 
@@ -381,8 +377,28 @@ impl SummaryState {
 
 async fn summarize_with_ollama(previous: &str, items: &[String], model: &str) -> Result<String> {
     let prompt = format!(
-        "Previous summary:\n{}\n\nNew traffic since then:\n{}\n\nProvide a concise merged summary.",
-        previous,
+        "You are an intelligent browsing behavior analyst. Your task is to analyze web traffic patterns and provide meaningful insights.
+
+**Current Analysis:**
+{}
+
+**New Activity:**
+{}
+
+**Instructions:**
+1. **Identify Patterns:** Look for recurring domains, workflows, or user behaviors
+2. **Categorize Activity:** Group URLs by purpose (work, research, entertainment, shopping, etc.)
+3. **Extract Insights:** What can you infer about the user's current tasks or interests?
+4. **Update Summary:** Merge new insights with existing analysis, prioritizing recent activity
+5. **Be Concise:** Provide a focused summary that highlights key patterns and changes
+
+**Output Format:**
+- **Key Patterns:** Main browsing behaviors observed
+- **Current Focus:** What the user seems to be working on or interested in
+- **Notable Changes:** How activity has evolved from the previous summary
+
+Provide your analysis:",
+        if previous.is_empty() { "None - this is the first analysis." } else { previous },
         items.join("\n")
     );
     let body = GenReq {
@@ -396,17 +412,23 @@ async fn summarize_with_ollama(previous: &str, items: &[String], model: &str) ->
         .send()
         .await
         .context("Failed to send request to Ollama")?;
-    
+
     let status = response.status();
-    let response_text = response.text().await
+    let response_text = response
+        .text()
+        .await
         .context("Failed to read response body")?;
-    
+
     if !status.is_success() {
-        return Err(anyhow::anyhow!("Ollama API error ({}): {}", status, response_text));
+        return Err(anyhow::anyhow!(
+            "Ollama API error ({}): {}",
+            status,
+            response_text
+        ));
     }
-    
+
     let resp: GenResp = serde_json::from_str(&response_text)
-        .context(format!("Failed to parse JSON response: {}", response_text))?;
+        .context(format!("Failed to parse JSON response: {response_text}"))?;
     Ok(resp.response.trim().to_string())
 }
 
@@ -415,11 +437,16 @@ async fn ambient_loop(interval_secs: u64, model: String) -> Result<()> {
     let mut timer = tokio::time::interval(Duration::from_secs(interval_secs));
     loop {
         timer.tick().await;
-        let cutoff = Utc::now() - CDuration::seconds(i64::try_from(interval_secs).unwrap_or(i64::MAX));
+        let cutoff =
+            Utc::now() - CDuration::seconds(i64::try_from(interval_secs).unwrap_or(i64::MAX));
         let mut new_items = Vec::new();
 
-        let Ok(path) = log_path() else { continue; };
-        let Ok(file) = fs::File::open(path) else { continue; };
+        let Ok(path) = log_path() else {
+            continue;
+        };
+        let Ok(file) = fs::File::open(path) else {
+            continue;
+        };
         for line in BufReader::new(file).lines().map_while(Result::ok) {
             if let Ok(entry) = serde_json::from_str::<LogEntry>(&line) {
                 if entry.ts >= cutoff {
@@ -432,6 +459,17 @@ async fn ambient_loop(interval_secs: u64, model: String) -> Result<()> {
         }
 
         let mut state = SummaryState::load();
+        if state.text.is_empty() {
+            println!(
+                "Starting fresh AI analysis with {} new URLs...",
+                new_items.len()
+            );
+        } else {
+            println!(
+                "Updating existing analysis with {} new URLs (previous summary exists)",
+                new_items.len()
+            );
+        }
         match summarize_with_ollama(&state.text, &new_items, &model).await {
             Ok(summary) => {
                 state.text = summary;
@@ -451,29 +489,29 @@ fn run_log() -> Result<()> {
     rt.block_on(async {
         let mut squid = SquidProcess::start()?;
         let running = Arc::clone(&squid.running);
-        
+
         let log_monitor = task::spawn(monitor_squid_logs(Arc::clone(&running)));
-        
+
         signal::ctrl_c().await?;
         println!("\nShutting down proxy...");
-        
+
         squid.stop()?;
         log_monitor.abort();
-        
+
         Ok(())
     })
 }
 
 fn run_analyze(since_str: &str, max_items: usize, model: &str) -> Result<()> {
-    println!("Starting analysis for period: {}", since_str);
+    println!("Starting analysis for period: {since_str}");
     let start = parse_since(since_str)?;
-    println!("Parsed start time: {}", start);
+    println!("Parsed start time: {start}");
     let mut items = Vec::new();
     let Ok(path) = log_path() else {
         println!("No log file found");
         return Ok(());
     };
-    println!("Opening log file: {:?}", path);
+    println!("Opening log file: {}", path.display());
     let Ok(file) = fs::File::open(path) else {
         println!("Could not open log file");
         return Ok(());
@@ -487,7 +525,7 @@ fn run_analyze(since_str: &str, max_items: usize, model: &str) -> Result<()> {
                 }
             }
             Err(e) => {
-                eprintln!("Warning: Failed to parse log line: {} (error: {})", line, e);
+                eprintln!("Warning: Failed to parse log line: {line} (error: {e})");
                 continue;
             }
         }
@@ -500,8 +538,35 @@ fn run_analyze(since_str: &str, max_items: usize, model: &str) -> Result<()> {
         return Ok(());
     }
 
+    println!(
+        "Found {} URLs to analyze. Starting AI analysis with {}...",
+        items.len(),
+        model
+    );
+
+    // Check for existing summary
+    let state = SummaryState::load();
+    if state.text.is_empty() {
+        println!("Previous analysis: None - this is a fresh analysis");
+    } else {
+        println!(
+            "Previous analysis: Found existing summary from {}",
+            state.updated
+        );
+    }
+
     let rt = Runtime::new().context("Failed to create tokio runtime")?;
-    let summary = rt.block_on(summarize_with_ollama("", &items, model))?;
+    let summary = rt.block_on(summarize_with_ollama(&state.text, &items, model))?;
+
+    // Save the updated summary
+    let updated_state = SummaryState {
+        text: summary.clone(),
+        updated: Utc::now(),
+    };
+    if let Err(e) = updated_state.save() {
+        eprintln!("Warning: Failed to save updated summary: {e}");
+    }
+
     println!("Summary:\n{summary}");
     Ok(())
 }
@@ -512,10 +577,10 @@ fn run_ambient(interval_secs: u64, model: &str) -> Result<()> {
     rt.block_on(async {
         let mut squid = SquidProcess::start()?;
         let running = Arc::clone(&squid.running);
-        
+
         let log_monitor = task::spawn(monitor_squid_logs(Arc::clone(&running)));
         let ambient = task::spawn(ambient_loop(interval_secs, model));
-        
+
         tokio::select! {
             _ = signal::ctrl_c() => {
                 println!("\nShutting down proxy...");
@@ -523,7 +588,7 @@ fn run_ambient(interval_secs: u64, model: &str) -> Result<()> {
             _ = log_monitor => {},
             _ = ambient => {},
         }
-        
+
         squid.stop()?;
         Ok(())
     })
@@ -553,7 +618,11 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Commands::Log => run_log(),
-        Commands::Analyze { since, max_items, model } => run_analyze(&since, max_items, &model),
+        Commands::Analyze {
+            since,
+            max_items,
+            model,
+        } => run_analyze(&since, max_items, &model),
         Commands::Ambient { interval, model } => run_ambient(interval, &model),
     }
 }
