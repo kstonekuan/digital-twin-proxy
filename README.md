@@ -2,7 +2,7 @@
 
 A traffic logger and summarizer.
 
-## What it does
+## Overview
 
 This tool manages a Squid proxy to log web traffic and uses a local AI model (via Ollama) to summarize the traffic patterns. 
 
@@ -14,62 +14,11 @@ The proxy:
 
 ## Prerequisites
 
-### Installing Squid Proxy
+- [Squid](https://www.squid-cache.org/) proxy
+- [Ollama](https://ollama.com/) for local LLMs
+  - The proxy expects Ollama to be running on `http://localhost:11434` (default port).
 
-This tool requires Squid to be installed on your system:
-
-**Linux:**
-```bash
-# Ubuntu/Debian
-sudo apt install squid
-
-# Fedora/RHEL
-sudo dnf install squid
-
-# Arch
-sudo pacman -S squid
-```
-
-**macOS:**
-```bash
-brew install squid
-```
-
-**Windows:**
-```bash
-# Using Chocolatey
-choco install squid
-```
-
-## Prerequisites
-
-### Installing Ollama
-
-This tool requires Ollama to be installed and running with the Llama 3.2 3B model.
-
-1. **Install Ollama:**
-   - **Linux/WSL**: `curl -fsSL https://ollama.ai/install.sh | sh`
-   - **macOS**: `brew install ollama` or download from [ollama.ai](https://ollama.ai)
-   - **Windows**: Download from [ollama.ai](https://ollama.ai)
-
-2. **Start Ollama service:**
-   ```bash
-   ollama serve
-   ```
-
-3. **Pull the required model:**
-   ```bash
-   ollama pull llama3.2:3b
-   ```
-
-4. **Verify it's working:**
-   ```bash
-   ollama run llama3.2:3b "Hello, are you working?"
-   ```
-
-The proxy expects Ollama to be running on `http://localhost:11434` (default port).
-
-## How to use
+## Usage
 
 There are three main commands:
 
@@ -122,7 +71,7 @@ Browser → Squid Proxy (port 8888) → Internet
 
 ## Development
 
-### Building
+### Build
 
 To build the project, run:
 
@@ -218,7 +167,7 @@ When running the proxy in WSL, you need the WSL IP address:
 
 3. **Alternative: Chrome command-line**
    ```powershell
-   chrome.exe --proxy-server="http://172.20.128.1:8888"
+   chrome.exe --proxy-server="http://<WSL_IP>:8888"
    ```
 
 4. **Allow through firewall (if needed):**
@@ -250,34 +199,7 @@ After configuring your browser and starting the proxy (`./ai-proxy log`), test t
    ```
    You should see JSON entries for each request.
 
-3. **Test HTTP**: Visit `http://example.com` and look for:
+3. **Test**: Visit `https://github.com/kstonekuan` and look for:
    ```json
-   {"url":"http://example.com/","ts":"2024-..."}
+   {"url":"https://github.com/kstonekuan","ts":"2025-..."}
    ```
-
-4. **Test HTTPS**: Visit `https://github.com` and look for:
-   ```json
-   {"url":"https://github.com/","ts":"2024-..."}
-   ```
-
-## Troubleshooting
-
-### Squid not found
-If you see "Squid is not installed", make sure Squid is installed and in your PATH. The application looks for Squid in common locations, but you may need to add it to your PATH manually.
-
-### Permission denied
-On some systems, Squid may need additional permissions. If you see permission errors:
-- Make sure the `/tmp/squid_access.log` file is writable
-- Check that your user has permission to run Squid
-
-### Proxy connection failed
-If your browser can't connect to the proxy:
-- Make sure no other service is using port 8888
-- Check that Squid started successfully (look for error messages)
-- Try running Squid manually with: `squid -N -f squid.conf -d 1`
-
-### No traffic being logged
-If the proxy is running but no traffic appears in the logs:
-- Verify your browser is configured to use `127.0.0.1:8888` as the proxy
-- Check that Squid's access log is being created at `/tmp/squid_access.log`
-- Make sure your browser isn't bypassing the proxy for local addresses
