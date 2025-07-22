@@ -41,14 +41,19 @@ enum Commands {
     Log,
     /// One-shot summarization of logged traffic since <duration>
     Analyze {
+        #[arg(short, long)]
         since: String,
-        #[arg(short, long, default_value_t = 500)]
+        #[arg(short = 'n', long, default_value_t = 500)]
         max_items: usize, // safety cap
+        #[arg(short, long, default_value = OLLAMA_MODEL)]
+        model: String,
     },
     /// Start proxy + periodic summarization (background)
     Ambient {
         #[arg(short, long, default_value_t = 30)]
         interval: u64, // seconds
+        #[arg(short, long, default_value = OLLAMA_MODEL)]
+        model: String,
     },
 }
 
@@ -374,29 +379,39 @@ impl SummaryState {
     }
 }
 
-async fn summarize_with_ollama(previous: &str, items: &[String]) -> Result<String> {
+async fn summarize_with_ollama(previous: &str, items: &[String], model: &str) -> Result<String> {
     let prompt = format!(
         "Previous summary:\n{}\n\nNew traffic since then:\n{}\n\nProvide a concise merged summary.",
         previous,
         items.join("\n")
     );
     let body = GenReq {
-        model: OLLAMA_MODEL,
+        model,
         prompt: &prompt,
         stream: false,
     };
-    let resp: GenResp = reqwest::Client::new()
+    let response = reqwest::Client::new()
         .post(OLLAMA_GENERATE_URL)
         .json(&body)
         .send()
-        .await?
-        .json()
-        .await?;
+        .await
+        .context("Failed to send request to Ollama")?;
+    
+    let status = response.status();
+    let response_text = response.text().await
+        .context("Failed to read response body")?;
+    
+    if !status.is_success() {
+        return Err(anyhow::anyhow!("Ollama API error ({}): {}", status, response_text));
+    }
+    
+    let resp: GenResp = serde_json::from_str(&response_text)
+        .context(format!("Failed to parse JSON response: {}", response_text))?;
     Ok(resp.response.trim().to_string())
 }
 
 // ------------ ambient loop -------------------------------------------------
-async fn ambient_loop(interval_secs: u64) -> Result<()> {
+async fn ambient_loop(interval_secs: u64, model: String) -> Result<()> {
     let mut timer = tokio::time::interval(Duration::from_secs(interval_secs));
     loop {
         timer.tick().await;
@@ -417,7 +432,7 @@ async fn ambient_loop(interval_secs: u64) -> Result<()> {
         }
 
         let mut state = SummaryState::load();
-        match summarize_with_ollama(&state.text, &new_items).await {
+        match summarize_with_ollama(&state.text, &new_items, &model).await {
             Ok(summary) => {
                 state.text = summary;
                 state.updated = Utc::now();
@@ -449,21 +464,31 @@ fn run_log() -> Result<()> {
     })
 }
 
-fn run_analyze(since_str: &str, max_items: usize) -> Result<()> {
+fn run_analyze(since_str: &str, max_items: usize, model: &str) -> Result<()> {
+    println!("Starting analysis for period: {}", since_str);
     let start = parse_since(since_str)?;
+    println!("Parsed start time: {}", start);
     let mut items = Vec::new();
     let Ok(path) = log_path() else {
         println!("No log file found");
         return Ok(());
     };
+    println!("Opening log file: {:?}", path);
     let Ok(file) = fs::File::open(path) else {
         println!("Could not open log file");
         return Ok(());
     };
+    println!("Reading log file...");
     for line in BufReader::new(file).lines().map_while(Result::ok) {
-        if let Ok(entry) = serde_json::from_str::<LogEntry>(&line) {
-            if entry.ts >= start {
-                items.push(entry.url);
+        match serde_json::from_str::<LogEntry>(&line) {
+            Ok(entry) => {
+                if entry.ts >= start {
+                    items.push(entry.url);
+                }
+            }
+            Err(e) => {
+                eprintln!("Warning: Failed to parse log line: {} (error: {})", line, e);
+                continue;
             }
         }
         if items.len() >= max_items {
@@ -476,19 +501,20 @@ fn run_analyze(since_str: &str, max_items: usize) -> Result<()> {
     }
 
     let rt = Runtime::new().context("Failed to create tokio runtime")?;
-    let summary = rt.block_on(summarize_with_ollama("", &items))?;
+    let summary = rt.block_on(summarize_with_ollama("", &items, model))?;
     println!("Summary:\n{summary}");
     Ok(())
 }
 
-fn run_ambient(interval_secs: u64) -> Result<()> {
+fn run_ambient(interval_secs: u64, model: &str) -> Result<()> {
     let rt = Runtime::new().context("Failed to create tokio runtime")?;
+    let model = model.to_owned();
     rt.block_on(async {
         let mut squid = SquidProcess::start()?;
         let running = Arc::clone(&squid.running);
         
         let log_monitor = task::spawn(monitor_squid_logs(Arc::clone(&running)));
-        let ambient = task::spawn(ambient_loop(interval_secs));
+        let ambient = task::spawn(ambient_loop(interval_secs, model));
         
         tokio::select! {
             _ = signal::ctrl_c() => {
@@ -505,13 +531,17 @@ fn run_ambient(interval_secs: u64) -> Result<()> {
 
 // ------------ since parser -------------------------------------------------
 fn parse_since(input: &str) -> Result<DateTime<Utc>> {
-    if let Some(num) = input.strip_suffix('m') {
+    if let Some(num) = input.strip_suffix('d') {
         let n: i64 = num.parse()?;
-        return Ok(Utc::now() - CDuration::minutes(n));
+        return Ok(Utc::now() - CDuration::days(n));
     }
     if let Some(num) = input.strip_suffix('h') {
         let n: i64 = num.parse()?;
         return Ok(Utc::now() - CDuration::hours(n));
+    }
+    if let Some(num) = input.strip_suffix('m') {
+        let n: i64 = num.parse()?;
+        return Ok(Utc::now() - CDuration::minutes(n));
     }
     DateTime::parse_from_rfc3339(input)
         .map(|dt| dt.with_timezone(&Utc))
@@ -523,7 +553,7 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Commands::Log => run_log(),
-        Commands::Analyze { since, max_items } => run_analyze(&since, max_items),
-        Commands::Ambient { interval } => run_ambient(interval),
+        Commands::Analyze { since, max_items, model } => run_analyze(&since, max_items, &model),
+        Commands::Ambient { interval, model } => run_ambient(interval, &model),
     }
 }

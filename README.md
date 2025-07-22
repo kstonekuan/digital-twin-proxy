@@ -40,6 +40,7 @@ Summarizes logged traffic. You must specify a duration to analyze, for example `
 
 ```bash
 ai-proxy analyze --since 1h
+ai-proxy analyze --since 30m --model llama3.2:1b  # Use different model
 ```
 
 ### `ambient`
@@ -48,6 +49,7 @@ Starts the proxy and a background process that periodically summarizes the traff
 
 ```bash
 ai-proxy ambient --interval 60
+ai-proxy ambient --interval 30 --model llama3.2:1b  # Use different model
 ```
 
 This will summarize the traffic every 60 seconds.
@@ -84,7 +86,9 @@ To run the project, you can use `cargo run` with the same commands as the compil
 ```bash
 cargo run -- log
 cargo run -- analyze --since 1h
+cargo run -- analyze --since 1h --model llama3.2:1b
 cargo run -- ambient --interval 60
+cargo run -- ambient --interval 60 --model llama3.2:1b
 ```
 
 ### Code Quality with Clippy
