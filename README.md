@@ -4,23 +4,23 @@ Turn web browsing into personal memory for AI agents.
 
 Digital Twin Proxy logs web traffic and uses a local large language model (LLM) to generate summaries of your browsing patterns. It's designed for developers, researchers, and anyone interested in understanding their online activity through the lens of AI.
 
-## Table of Contents
-
-- [Features](#features)
-- [How It Works](#how-it-works)
-- [Getting Started](#getting-started)
-- [Usage](#usage)
-- [Context for Agentic Applications](#context-for-agentic-applications)
-- [Development](#development)
-- [Contributing](#contributing)
-- [License](#license)
-
 ## Features
 
 - **HTTP/S Traffic Logging**: Captures all web requests made through the proxy.
 - **AI-Powered Summarization**: Uses a local LLM (via Ollama) to analyze and summarize traffic.
 - **Flexible Operation Modes**: Run in the background, log traffic continuously, or perform one-off analysis.
 - **Customizable**: Easily change the AI model, summarization interval, and other settings.
+
+## Context for Agentic Applications
+
+The primary output of Digital Twin Proxy is a structured log of your web traffic, along with AI-generated summaries. This data can serve as a powerful source of real-time context for other agentic applications.
+
+By providing a summary of recent browsing history, you can engineer a more informed context window for other AI agents, enabling them to:
+-   **Personalize responses**: An agent can tailor its behavior based on your current tasks and interests.
+-   **Anticipate needs**: An agent can proactively offer assistance based on the websites you are visiting.
+-   **Improve tool usage**: An agent can better understand the context of your work and select the right tools for the job.
+
+This process of "context engineering" allows you to create a more powerful and personalized AI experience.
 
 ## How It Works
 
@@ -94,17 +94,6 @@ Digital Twin Proxy has three main commands:
 # Run in ambient mode, summarizing every 5 minutes
 ./digital-twin-proxy ambient --interval 300
 ```
-
-## Context for Agentic Applications
-
-The primary output of Digital Twin Proxy is a structured log of your web traffic, along with AI-generated summaries. This data can serve as a powerful source of real-time context for other agentic applications.
-
-By providing a summary of recent browsing history, you can engineer a more informed context window for other AI agents, enabling them to:
--   **Personalize responses**: An agent can tailor its behavior based on your current tasks and interests.
--   **Anticipate needs**: An agent can proactively offer assistance based on the websites you are visiting.
--   **Improve tool usage**: An agent can better understand the context of your work and select the right tools for the job.
-
-This process of "context engineering" allows you to create a more powerful and personalized AI experience.
 
 ## Development
 
