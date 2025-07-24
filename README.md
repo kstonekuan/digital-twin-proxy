@@ -22,6 +22,16 @@ By providing a summary of recent browsing history, you can engineer a more infor
 
 This process of "context engineering" allows you to create a more powerful and personalized AI experience.
 
+## Planned Features
+
+### MCP Server
+
+We will soon expose the context from your digital twin as an MCP server to support AI agents.
+
+### In-Browser Context Injection
+
+To create a more interactive and personalized web experience, we are developing a feature to inject real-time context directly into your browser for any agentic AI app (ChatGPT, Perplexity, etc.) to access your digital twin.
+
 ## How It Works
 
 The proxy operates by routing your browser's traffic through a local Squid instance. Here’s the data flow:
