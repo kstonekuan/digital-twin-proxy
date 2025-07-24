@@ -1,10 +1,12 @@
 [package]
-name = "ai-proxy"
+name = "digital-twin-proxy"
+description = "Turn web browsing into personal memory for AI agents"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
+
 [[bin]]
-name = "ai-proxy"
+name = "digital-twin-proxy"
 path = "src/main.rs"
 
 [dependencies]

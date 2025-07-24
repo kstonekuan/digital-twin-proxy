@@ -1,209 +1,131 @@
-# AI Proxy
+# Digital Twin Proxy
 
-A traffic logger and summarizer.
+Turn web browsing into personal memory for AI agents.
 
-## Overview
+Digital Twin Proxy logs web traffic and uses a local large language model (LLM) to generate summaries of your browsing patterns. It's designed for developers, researchers, and anyone interested in understanding their online activity through the lens of AI.
 
-This tool manages a Squid proxy to log web traffic and uses a local AI model (via Ollama) to summarize the traffic patterns. 
+## Table of Contents
 
-The proxy:
-- Forwards HTTP and HTTPS requests through Squid
-- Logs all URLs and Host headers for traffic analysis
-- Supports AI-powered summarization of browsing patterns
-- Full support for both HTTP and HTTPS traffic
+- [Features](#features)
+- [How It Works](#how-it-works)
+- [Getting Started](#getting-started)
+- [Usage](#usage)
+- [Context for Agentic Applications](#context-for-agentic-applications)
+- [Development](#development)
+- [Contributing](#contributing)
+- [License](#license)
 
-## Prerequisites
+## Features
 
-- [Squid](https://www.squid-cache.org/) proxy
-- [Ollama](https://ollama.com/) for local LLMs
-  - The proxy expects Ollama to be running on `http://localhost:11434` (default port).
+- **HTTP/S Traffic Logging**: Captures all web requests made through the proxy.
+- **AI-Powered Summarization**: Uses a local LLM (via Ollama) to analyze and summarize traffic.
+- **Flexible Operation Modes**: Run in the background, log traffic continuously, or perform one-off analysis.
+- **Customizable**: Easily change the AI model, summarization interval, and other settings.
 
-## Usage
+## How It Works
 
-There are three main commands:
-
-* `log`: Start the proxy and log traffic only. No summarization is performed.
-* `analyze`: Perform a one-shot summarization of logged traffic since a given duration.
-* `ambient`: Start the proxy and periodically summarize traffic in the background.
-
-### `log`
-
-Starts a proxy on port 8888. All traffic sent to this proxy will be logged.
-
-```bash
-ai-proxy log
-```
-
-### `analyze`
-
-Summarizes logged traffic. You must specify a duration to analyze, for example `1h` for the last hour or `30m` for the last 30 minutes.
-
-```bash
-ai-proxy analyze --since 1h
-ai-proxy analyze --since 30m --model llama3.2:1b  # Use different model
-```
-
-### `ambient`
-
-Starts the proxy and a background process that periodically summarizes the traffic. The default interval is 30 seconds.
-
-```bash
-ai-proxy ambient --interval 60
-ai-proxy ambient --interval 30 --model llama3.2:1b  # Use different model
-```
-
-This will summarize the traffic every 60 seconds.
-
-
-## Architecture
-
-The AI Proxy works by:
-1. Starting a Squid proxy instance with custom configuration
-2. Monitoring Squid's access logs to track visited URLs
-3. Converting log entries into a format suitable for AI analysis
-4. Using Ollama to generate summaries of browsing patterns
+The proxy operates by routing your browser's traffic through a local Squid instance. Here’s the data flow:
 
 ```
 Browser → Squid Proxy (port 8888) → Internet
               ↓
          Access Logs
               ↓
-         AI Proxy App → Ollama → Summaries
+         Digital Twin Proxy App → Ollama → Summaries
 ```
+
+1.  **Traffic Interception**: Your browser is configured to send all HTTP and HTTPS requests to the Digital Twin Proxy listener on port 8888.
+2.  **Logging**: The proxy, powered by Squid, logs every request's URL and host.
+3.  **Analysis**: The `digital-twin-proxy` application monitors these logs, sending them to a local LLM via the Ollama API.
+4.  **Summarization**: The LLM processes the traffic data and generates a human-readable summary of browsing patterns.
+
+## Getting Started
+
+### Prerequisites
+
+- [**Rust**](https://www.rust-lang.org/tools/install) toolchain
+- [**Squid**](https://www.squid-cache.org/) proxy
+- [**Ollama**](https://ollama.com/) with a running model (e.g., `ollama run llama3`)
+
+### Installation
+
+Clone the repository and build the project:
+
+```bash
+git clone https://github.com/kstonekuan/digital-twin-proxy.git
+cd digital-twin-proxy
+cargo build --release
+```
+
+The binary will be located at `target/release/digital-twin-proxy`.
+
+### Configuration
+
+1.  **Configure Your Browser**: Set your browser's HTTP and HTTPS proxy to `127.0.0.1:8888`.
+2.  **Verify**: Start the proxy in logging mode and visit a website.
+
+    ```bash
+    # Terminal 1: Start the proxy
+    ./target/release/digital-twin-proxy log
+
+    # Terminal 2: Tail the logs
+    tail -f ~/.local/share/digital-twin-proxy/log.ndjson
+    ```
+
+    You should see JSON objects representing your web traffic.
+
+## Usage
+
+Digital Twin Proxy has three main commands:
+
+- `log`: Start the proxy and only log traffic.
+- `analyze`: Perform a one-shot analysis of traffic logged since a given duration.
+- `ambient`: Run the proxy and periodically summarize traffic in the background.
+
+**Examples:**
+
+```bash
+# Log traffic without summarization
+./digital-twin-proxy log
+
+# Analyze traffic from the last hour
+./digital-twin-proxy analyze --since 1h
+
+# Run in ambient mode, summarizing every 5 minutes
+./digital-twin-proxy ambient --interval 300
+```
+
+## Context for Agentic Applications
+
+The primary output of Digital Twin Proxy is a structured log of your web traffic, along with AI-generated summaries. This data can serve as a powerful source of real-time context for other agentic applications.
+
+By providing a summary of recent browsing history, you can engineer a more informed context window for other AI agents, enabling them to:
+-   **Personalize responses**: An agent can tailor its behavior based on your current tasks and interests.
+-   **Anticipate needs**: An agent can proactively offer assistance based on the websites you are visiting.
+-   **Improve tool usage**: An agent can better understand the context of your work and select the right tools for the job.
+
+This process of "context engineering" allows you to create a more powerful and personalized AI experience.
 
 ## Development
 
-### Build
-
-To build the project, run:
+This project uses `rustfmt` for formatting and `clippy` for linting.
 
 ```bash
-cargo build
-```
+# Format code
+cargo fmt
 
-To run the project, you can use `cargo run` with the same commands as the compiled binary:
-
-```bash
-cargo run -- log
-cargo run -- analyze --since 1h
-cargo run -- analyze --since 1h --model llama3.2:1b
-cargo run -- ambient --interval 60
-cargo run -- ambient --interval 60 --model llama3.2:1b
-```
-
-### Code Quality with Clippy
-
-This project uses Clippy for Rust code linting. The configuration is in `Cargo.toml` under `[lints.clippy]`.
-
-**Run Clippy:**
-```bash
+# Run linter
 cargo clippy --all-targets --all-features
+
+# Build and run tests
+cargo build
+cargo test
 ```
 
-**Auto-fix warnings:**
-```bash
-cargo clippy --fix --allow-dirty --allow-staged
-```
+## Contributing
 
-**Useful aliases** (defined in `.cargo/config.toml`):
-```bash
-cargo c          # Short for cargo clippy
-cargo lint       # Strict mode (fails on warnings)
-cargo pre-commit # Run before committing code
-```
+Contributions are welcome! Please feel free to submit a pull request or open an issue.
 
-Before submitting code, ensure it passes:
-```bash
-cargo fmt        # Format code
-cargo clippy     # Check for issues
-cargo test       # Run tests
-cargo build      # Verify it builds
-```
+## License
 
-## How it works
-
-The application manages a Squid proxy instance that listens on port 8888. When you start the proxy:
-
-1. It checks if Squid is installed on your system
-2. Starts Squid with a custom configuration file
-3. Monitors Squid's access log for new entries
-4. Parses URLs from the access log and stores them in the application's log file
-
-The summarization is done by a local AI model (Llama 3.2 3B) running on Ollama. The `summarize_with_ollama` function sends the logged traffic to the Ollama API and gets a summary back.
-
-The `ambient` command starts the proxy and a summarization loop. The summarization loop runs every `interval` seconds, gets the new traffic from the log file, and asks the AI model to summarize it. The summary is then saved to a file.
-
-## Configuring Your Browser to Use the Proxy
-
-The proxy listens on port 8888. Simply configure your browser to use `127.0.0.1:8888` as the HTTP proxy.
-
-### macOS
-
-1. **Open System Settings:**
-   - Apple menu → System Settings → Network
-   - Select your active connection (Wi-Fi or Ethernet) → Details...
-   - Go to the Proxies tab
-
-2. **Configure the proxy:**
-   - Check both **Web Proxy (HTTP)** and **Secure Web Proxy (HTTPS)**
-   - Server: `127.0.0.1`
-   - Port: `8888`
-   - Click OK → Apply
-
-3. **To disable:** Uncheck the proxy boxes and Apply
-
-### Windows (with WSL)
-
-When running the proxy in WSL, you need the WSL IP address:
-
-1. **Find your WSL IP:**
-   ```bash
-   ip addr show eth0 | grep 'inet ' | awk '{print $2}' | cut -d/ -f1
-   # Example: 172.20.128.1
-   ```
-
-2. **Configure Windows proxy settings:**
-   - Go to Settings → Network & Internet → Proxy
-   - Under "Manual proxy setup", turn on "Use a proxy server"
-   - Address: `<WSL IP>`
-   - Port: `8888`
-   - Click Save
-
-3. **Alternative: Chrome command-line**
-   ```powershell
-   chrome.exe --proxy-server="http://<WSL_IP>:8888"
-   ```
-
-4. **Allow through firewall (if needed):**
-   ```bash
-   sudo ufw allow 8888
-   ```
-
-### Linux
-
-Use your system's network settings or launch Chrome with:
-
-```bash
-google-chrome --proxy-server="http://127.0.0.1:8888"
-```
-
-### Verification
-
-After configuring your browser and starting the proxy (`./ai-proxy log`), test that it's working:
-
-1. **Check proxy output**: Visit any website in Chrome. You should see:
-   ```
-   Starting Squid proxy on port 8888...
-   Proxy listening on 127.0.0.1:8888
-   ```
-
-2. **Check the log file**: In another terminal, run:
-   ```bash
-   tail -f ~/.local/share/ai-proxy/log.ndjson
-   ```
-   You should see JSON entries for each request.
-
-3. **Test**: Visit `https://github.com/kstonekuan` and look for:
-   ```json
-   {"url":"https://github.com/kstonekuan","ts":"2025-..."}
-   ```
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
