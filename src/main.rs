@@ -1,7 +1,17 @@
 use anyhow::{Context, Result};
+use async_openai::{
+    config::OpenAIConfig,
+    types::{
+        ChatCompletionRequestSystemMessageArgs, ChatCompletionRequestToolMessageArgs,
+        ChatCompletionRequestUserMessageArgs, ChatCompletionTool, ChatCompletionToolType,
+        CreateChatCompletionRequestArgs, FunctionObjectArgs,
+    },
+    Client,
+};
 use chrono::{DateTime, Duration as CDuration, Utc};
 use clap::{Parser, Subcommand};
 use directories::ProjectDirs;
+use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, OpenOptions},
@@ -15,8 +25,7 @@ use tokio::{runtime::Runtime, signal, task, time::Duration};
 
 // ------------ constants ---------------------------------------------------
 const PROXY_PORT: u16 = 8888;
-const OLLAMA_GENERATE_URL: &str = "http://localhost:11434/api/generate";
-const OLLAMA_MODEL: &str = "llama3.2:3b";
+const DEFAULT_MODEL: &str = "llama3.2:3b";
 const LOG_FILE: &str = "log.ndjson";
 const SUMMARY_FILE: &str = "rolling_summary.json";
 const SQUID_LOG_PATH: &str = "/tmp/squid_access.log";
@@ -40,14 +49,14 @@ enum Commands {
         since: String,
         #[arg(short = 'n', long, default_value_t = 500)]
         max_items: usize, // safety cap
-        #[arg(short, long, default_value = OLLAMA_MODEL)]
+        #[arg(short, long, default_value = DEFAULT_MODEL)]
         model: String,
     },
     /// Start proxy + periodic summarization (background)
     Ambient {
         #[arg(short, long, default_value_t = 30)]
         interval: u64, // seconds
-        #[arg(short, long, default_value = OLLAMA_MODEL)]
+        #[arg(short, long, default_value = DEFAULT_MODEL)]
         model: String,
     },
 }
@@ -110,7 +119,7 @@ fn append_log(url: &str) -> Result<()> {
     Ok(())
 }
 
-// ------------ squid management --------------------------------------------
+// ------------ squid management -------------------------------------------
 fn find_squid_binary() -> Option<PathBuf> {
     // Common locations for squid binary
     let paths = [
@@ -273,7 +282,7 @@ impl Drop for SquidProcess {
     }
 }
 
-// ------------ squid log parsing -------------------------------------------
+// ------------ squid log parsing ------------------------------------------
 fn parse_squid_log_line(line: &str) -> Option<String> {
     // Parse our custom log format:
     // %ts.%03tu %6tr %>a %Ss/%03>Hs %<st %rm %ru %{Host}>h %un %Sh/%<a %mt
@@ -339,18 +348,6 @@ async fn monitor_squid_logs(running: Arc<AtomicBool>) -> Result<()> {
 }
 
 // ------------ summarization ----------------------------------------------
-#[derive(Serialize)]
-struct GenReq<'a> {
-    model: &'a str,
-    prompt: &'a str,
-    stream: bool,
-}
-
-#[derive(Deserialize)]
-struct GenResp {
-    response: String,
-}
-
 #[derive(Default, Serialize, Deserialize)]
 struct SummaryState {
     text: String,
@@ -375,22 +372,36 @@ impl SummaryState {
     }
 }
 
+async fn fetch_page_content(url: &str) -> Result<String> {
+    println!("Fetching content for url: {url}");
+    let html = reqwest::get(url).await?.text().await?;
+    let document = Html::parse_document(&html);
+    let selector = Selector::parse("p").map_err(|_| anyhow::anyhow!("Failed to parse selector"))?;
+    let text = document
+        .select(&selector)
+        .map(|x| x.inner_html())
+        .collect::<Vec<_>>()
+        .join("\n");
+    Ok(text)
+}
+
 async fn summarize_with_ollama(previous: &str, items: &[String], model: &str) -> Result<String> {
-    let prompt = format!(
-        "You are an intelligent browsing behavior analyst. Your task is to analyze web traffic patterns and provide meaningful insights.
+    let config = OpenAIConfig::new().with_api_base("http://localhost:11434/v1");
+    let client = Client::with_config(config);
+
+    let mut messages = vec![
+        ChatCompletionRequestSystemMessageArgs::default()
+            .content(format!("You are an intelligent browsing behavior analyst. Your task is to analyze web traffic patterns and provide meaningful insights.
 
 **Current Analysis:**
-{}
-
-**New Activity:**
-{}
-
+{}\n
 **Instructions:**
 1. **Identify Patterns:** Look for recurring domains, workflows, or user behaviors
 2. **Categorize Activity:** Group URLs by purpose (work, research, entertainment, shopping, etc.)
 3. **Extract Insights:** What can you infer about the user's current tasks or interests?
 4. **Update Summary:** Merge new insights with existing analysis, prioritizing recent activity
 5. **Be Concise:** Provide a focused summary that highlights key patterns and changes
+6. **Tool Use:** You have a tool `fetch_page_content` that you can use to get the content of a page. Use it if you think a page is particularly interesting or relevant to the user's activity.
 
 **Output Format:**
 - **Key Patterns:** Main browsing behaviors observed
@@ -398,38 +409,79 @@ async fn summarize_with_ollama(previous: &str, items: &[String], model: &str) ->
 - **Notable Changes:** How activity has evolved from the previous summary
 
 Provide your analysis:",
-        if previous.is_empty() { "None - this is the first analysis." } else { previous },
-        items.join("\n")
-    );
-    let body = GenReq {
-        model,
-        prompt: &prompt,
-        stream: false,
-    };
-    let response = reqwest::Client::new()
-        .post(OLLAMA_GENERATE_URL)
-        .json(&body)
-        .send()
-        .await
-        .context("Failed to send request to Ollama")?;
+                if previous.is_empty() { "None - this is the first analysis." } else { previous }
+            ))
+            .build()?
+            .into(),
+        ChatCompletionRequestUserMessageArgs::default()
+            .content(format!("**New Activity:**\n{}", items.join("\n")))
+            .build()?
+            .into(),
+    ];
 
-    let status = response.status();
-    let response_text = response
-        .text()
-        .await
-        .context("Failed to read response body")?;
+    let tools = vec![ChatCompletionTool {
+        r#type: ChatCompletionToolType::Function,
+        function: FunctionObjectArgs::default()
+            .name("fetch_page_content")
+            .description("Fetches the content of a web page.")
+            .parameters(serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "The URL of the page to fetch."
+                    }
+                },
+                "required": ["url"]
+            }))
+            .build()?,
+    }];
 
-    if !status.is_success() {
-        return Err(anyhow::anyhow!(
-            "Ollama API error ({}): {}",
-            status,
-            response_text
-        ));
+    let request = CreateChatCompletionRequestArgs::default()
+        .model(model)
+        .messages(messages.clone())
+        .tools(tools.clone())
+        .tool_choice("auto")
+        .build()?;
+
+    let response = client.chat().create(request).await?;
+
+    if let Some(tool_calls) = response.choices[0].message.tool_calls.as_ref() {
+        for tool_call in tool_calls {
+            let function_name = &tool_call.function.name;
+            if function_name == "fetch_page_content" {
+                let args: serde_json::Value = serde_json::from_str(&tool_call.function.arguments)?;
+                if let Some(url) = args.get("url").and_then(|u| u.as_str()) {
+                    let content = fetch_page_content(url).await?;
+                    messages.push(
+                        ChatCompletionRequestToolMessageArgs::default()
+                            .content(content)
+                            .tool_call_id(tool_call.id.clone())
+                            .build()?
+                            .into(),
+                    );
+                }
+            }
+        }
+
+        let request = CreateChatCompletionRequestArgs::default()
+            .model(model)
+            .messages(messages.clone())
+            .tools(tools)
+            .tool_choice("auto")
+            .build()?;
+
+        let response = client.chat().create(request).await?;
+        if let Some(content) = response.choices[0].message.content.as_ref() {
+            return Ok(content.clone());
+        }
     }
 
-    let resp: GenResp = serde_json::from_str(&response_text)
-        .context(format!("Failed to parse JSON response: {response_text}"))?;
-    Ok(resp.response.trim().to_string())
+    if let Some(content) = response.choices[0].message.content.as_ref() {
+        return Ok(content.clone());
+    }
+
+    Ok(String::new())
 }
 
 // ------------ ambient loop -------------------------------------------------

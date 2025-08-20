@@ -10,14 +10,17 @@ name = "digital-twin-proxy"
 path = "src/main.rs"
 
 [dependencies]
-tokio = { version = "1.46.1", features = ["full"] }
-clap = { version = "4.5.41", features = ["derive"] }
+tokio = { version = "1.47.1", features = ["full"] }
+clap = { version = "4.5.45", features = ["derive"] }
 serde = { version = "1.0.219", features = ["derive"] }
-serde_json = "1.0.141"
-reqwest = { version = "0.12.22", features = ["json"] }
+serde_json = "1.0.143"
+reqwest = { version = "0.12.23", features = ["json"] }
 directories = "6.0.0"
 chrono = { version = "0.4.41", features = ["serde"] }
-anyhow = "1.0.98"
+anyhow = "1.0.99"
+async-openai = "0.29.1"
+scraper = "0.24.0"
+dotenvy = "0.15.7"
 
 [lints.rust]
 unsafe_code = "warn"
@@ -45,7 +48,6 @@ clone_on_ref_ptr = "warn"
 cognitive_complexity = "warn"
 too_many_arguments = "warn"
 too_many_lines = "warn"
-module_name_repetitions = "allow"
 must_use_candidate = "allow"
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
