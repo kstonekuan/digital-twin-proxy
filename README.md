@@ -11,6 +11,13 @@ Digital Twin Proxy logs web traffic and uses a local or remote large language mo
 - **Flexible Operation Modes**: Run in the background, log traffic continuously, or perform one-off analysis.
 - **Customizable**: Easily change the AI model, analysis interval, and other settings.
 - **OpenAI-Compatible**: Works with any OpenAI-compatible API, including local providers like Ollama and LM Studio, as well as remote services like OpenAI, Groq, etc.
+- **Privacy-Focused**: By using a local LLM, you can ensure that your browsing history remains private and is not sent to any third-party service.
+
+## A Note on Privacy
+
+This application is designed to work with your personal browsing history. As such, we strongly recommend using a local large language model (LLM) provider like [Ollama](https://ollama.com/) or [LM Studio](https://lmstudio.ai/). By running the LLM on your own machine, you can ensure that your browsing data remains private and is never sent to a third-party service.
+
+While you can use any OpenAI-compatible API, please be aware of the privacy implications of sending your browsing data to a remote service.
 
 ## Context for Agentic Applications
 
