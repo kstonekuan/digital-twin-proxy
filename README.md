@@ -15,7 +15,7 @@ Digital Twin Proxy logs web traffic and uses a local or remote large language mo
 
 ## A Note on Privacy
 
-This application is designed to work with your personal browsing history. As such, we strongly recommend using a local large language model (LLM) provider like [Ollama](https://ollama.com/) or [LM Studio](https://lmstudio.ai/). By running the LLM on your own machine, you can ensure that your browsing data remains private and is never sent to a third-party service.
+This application is designed to work with your personal browsing history. As such, we strongly recommend using a local large language model (LLM) provider like [Ollama](https://ollama.com/), [LM Studio](https://lmstudio.ai/), [vLLM](https://github.com/vllm-project/vllm), or [TGI](https://github.com/huggingface/text-generation-inference). By running the LLM on your own machine, you can ensure that your browsing data remains private and is never sent to a third-party service.
 
 While you can use any OpenAI-compatible API, please be aware of the privacy implications of sending your browsing data to a remote service.
 
@@ -64,12 +64,7 @@ Digital Twin Proxy App → OpenAI-compatible API → Decides to fetch content �
 
 - [**Rust**](https://www.rust-lang.org/tools/install) toolchain
 - [**Squid**](https://www.squid-cache.org/) proxy
-- Access to an **OpenAI-compatible API**. This can be a local service like [Ollama](https://ollama.com/) or [LM Studio](https://lmstudio.ai/), or a remote service like the [OpenAI API](https://beta.openai.com/signup/).
-
-This project also uses the following notable crates:
-- [`async-openai`](https://github.com/64bit/async-openai) for interacting with the OpenAI-compatible API.
-- [`scraper`](https://github.com/causal-agent/scraper) for parsing HTML content.
-- [`dotenvy`](https://github.com/allan2/dotenvy) for managing environment variables.
+- LLM access via **OpenAI-compatible API**. We recommend local service like [Ollama](https://ollama.com/), [LM Studio](https://lmstudio.ai/), [vLLM](https://github.com/vllm-project/vllm), or [TGI](https://github.com/huggingface/text-generation-inference).
 
 ### Installation
 
