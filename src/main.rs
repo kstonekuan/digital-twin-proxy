@@ -8,6 +8,7 @@ use async_openai::{
     },
     Client,
 };
+use dotenvy::dotenv;
 use chrono::{DateTime, Duration as CDuration, Utc};
 use clap::{Parser, Subcommand};
 use directories::ProjectDirs;
@@ -25,7 +26,7 @@ use tokio::{runtime::Runtime, signal, task, time::Duration};
 
 // ------------ constants ---------------------------------------------------
 const PROXY_PORT: u16 = 8888;
-const DEFAULT_MODEL: &str = "llama3.2:3b";
+const DEFAULT_MODEL: &str = "gpt-oss:20b";
 const LOG_FILE: &str = "log.ndjson";
 const SUMMARY_FILE: &str = "rolling_summary.json";
 const SQUID_LOG_PATH: &str = "/tmp/squid_access.log";
@@ -47,17 +48,25 @@ enum Commands {
     Analyze {
         #[arg(short, long)]
         since: String,
-        #[arg(short = 'n', long, default_value_t = 500)]
+        #[arg(short = 'x', long, env = "MAX_ANALYSIS_ITEMS", default_value_t = 500)]
         max_items: usize, // safety cap
-        #[arg(short, long, default_value = DEFAULT_MODEL)]
+        #[arg(short, long, env = "MODEL", default_value = DEFAULT_MODEL)]
         model: String,
+        #[arg(long, env = "API_BASE")]
+        api_base: String,
+        #[arg(long, env = "API_KEY")]
+        api_key: Option<String>,
     },
     /// Start proxy + periodic summarization (background)
     Ambient {
-        #[arg(short, long, default_value_t = 30)]
+        #[arg(short, long, env = "AMBIENT_INTERVAL", default_value_t = 30)]
         interval: u64, // seconds
-        #[arg(short, long, default_value = DEFAULT_MODEL)]
+        #[arg(short, long, env = "MODEL", default_value = DEFAULT_MODEL)]
         model: String,
+        #[arg(long, env = "API_BASE")]
+        api_base: String,
+        #[arg(long, env = "API_KEY")]
+        api_key: Option<String>,
     },
 }
 
@@ -385,8 +394,17 @@ async fn fetch_page_content(url: &str) -> Result<String> {
     Ok(text)
 }
 
-async fn summarize_with_ollama(previous: &str, items: &[String], model: &str) -> Result<String> {
-    let config = OpenAIConfig::new().with_api_base("http://localhost:11434/v1");
+async fn summarize_with_llm(
+    previous: &str,
+    items: &[String],
+    model: &str,
+    api_base: &str,
+    api_key: Option<&str>,
+) -> Result<String> {
+    let mut config = OpenAIConfig::new().with_api_base(api_base);
+    if let Some(key) = api_key {
+        config = config.with_api_key(key);
+    }
     let client = Client::with_config(config);
 
     let mut messages = vec![
@@ -485,7 +503,12 @@ Provide your analysis:",
 }
 
 // ------------ ambient loop -------------------------------------------------
-async fn ambient_loop(interval_secs: u64, model: String) -> Result<()> {
+async fn ambient_loop(
+    interval_secs: u64,
+    model: String,
+    api_base: String,
+    api_key: Option<String>,
+) -> Result<()> {
     let mut timer = tokio::time::interval(Duration::from_secs(interval_secs));
     loop {
         timer.tick().await;
@@ -522,7 +545,15 @@ async fn ambient_loop(interval_secs: u64, model: String) -> Result<()> {
                 new_items.len()
             );
         }
-        match summarize_with_ollama(&state.text, &new_items, &model).await {
+        match summarize_with_llm(
+            &state.text,
+            &new_items,
+            &model,
+            &api_base,
+            api_key.as_deref(),
+        )
+        .await
+        {
             Ok(summary) => {
                 state.text = summary;
                 state.updated = Utc::now();
@@ -554,7 +585,13 @@ fn run_log() -> Result<()> {
     })
 }
 
-fn run_analyze(since_str: &str, max_items: usize, model: &str) -> Result<()> {
+fn run_analyze(
+    since_str: &str,
+    max_items: usize,
+    model: &str,
+    api_base: &str,
+    api_key: Option<&String>,
+) -> Result<()> {
     println!("Starting analysis for period: {since_str}");
     let start = parse_since(since_str)?;
     println!("Parsed start time: {start}");
@@ -608,7 +645,13 @@ fn run_analyze(since_str: &str, max_items: usize, model: &str) -> Result<()> {
     }
 
     let rt = Runtime::new().context("Failed to create tokio runtime")?;
-    let summary = rt.block_on(summarize_with_ollama(&state.text, &items, model))?;
+    let summary = rt.block_on(summarize_with_llm(
+        &state.text,
+        &items,
+        model,
+        api_base,
+        api_key.map(std::string::String::as_str),
+    ))?;
 
     // Save the updated summary
     let updated_state = SummaryState {
@@ -623,15 +666,22 @@ fn run_analyze(since_str: &str, max_items: usize, model: &str) -> Result<()> {
     Ok(())
 }
 
-fn run_ambient(interval_secs: u64, model: &str) -> Result<()> {
+fn run_ambient(
+    interval_secs: u64,
+    model: &str,
+    api_base: &str,
+    api_key: Option<&String>,
+) -> Result<()> {
     let rt = Runtime::new().context("Failed to create tokio runtime")?;
     let model = model.to_owned();
+    let api_base = api_base.to_owned();
+    let api_key = api_key.map(std::borrow::ToOwned::to_owned);
     rt.block_on(async {
         let mut squid = SquidProcess::start()?;
         let running = Arc::clone(&squid.running);
 
         let log_monitor = task::spawn(monitor_squid_logs(Arc::clone(&running)));
-        let ambient = task::spawn(ambient_loop(interval_secs, model));
+        let ambient = task::spawn(ambient_loop(interval_secs, model, api_base, api_key));
 
         tokio::select! {
             _ = signal::ctrl_c() => {
@@ -667,6 +717,7 @@ fn parse_since(input: &str) -> Result<DateTime<Utc>> {
 
 // ------------ main ---------------------------------------------------------
 fn main() -> Result<()> {
+    dotenv().ok();
     let cli = Cli::parse();
     match cli.command {
         Commands::Log => run_log(),
@@ -674,7 +725,14 @@ fn main() -> Result<()> {
             since,
             max_items,
             model,
-        } => run_analyze(&since, max_items, &model),
-        Commands::Ambient { interval, model } => run_ambient(interval, &model),
+            api_base,
+            api_key,
+        } => run_analyze(&since, max_items, &model, &api_base, api_key.as_ref()),
+        Commands::Ambient {
+            interval,
+            model,
+            api_base,
+            api_key,
+        } => run_ambient(interval, &model, &api_base, api_key.as_ref()),
     }
 }

@@ -86,25 +86,59 @@ Set your browser's HTTP and HTTPS proxy to `127.0.0.1:8888`.
 
 #### 2. Configure the API Endpoint
 
-You can configure the application to use any OpenAI-compatible API. You can do this by creating a `.env` file in the root of the project, or by using command-line flags.
+You can configure the application using three methods (in order of priority):
 
-**Using a `.env` file:**
+1. **Command-line flags** (highest priority)
+2. **Environment variables**
+3. **`.env` file** (lowest priority)
 
-Create a `.env` file in the root of the project with the following content:
+##### Available Configuration Options
 
+| Option | Environment Variable | CLI Flag | Default | Description |
+|--------|---------------------|----------|---------|-------------|
+| API Base URL | `API_BASE` | `--api-base` | (required) | OpenAI-compatible API endpoint |
+| API Key | `API_KEY` | `--api-key` | (optional) | API key for the service |
+| Model | `MODEL` | `--model` | `gpt-oss:20b` | LLM model to use |
+| Ambient Interval | `AMBIENT_INTERVAL` | `--interval` | `30` | Seconds between analyses (ambient mode) |
+| Max Analysis Items | `MAX_ANALYSIS_ITEMS` | `--max-items` | `500` | Maximum URLs to analyze per batch |
+
+##### Configuration Methods
+
+**Method 1: Using a `.env` file:**
+
+Copy the example configuration and edit it:
+
+```bash
+cp .env.example .env
+# Edit .env with your values
 ```
-MODEL=your-model-name
-API_BASE=your-api-base-url
-API_KEY=your-api-key
+
+Example `.env` file:
+```
+API_BASE=http://localhost:11434/v1
+API_KEY=your-api-key-if-needed
+MODEL=llama3.2:3b
+AMBIENT_INTERVAL=60
+MAX_ANALYSIS_ITEMS=1000
 ```
 
-**Using command-line flags:**
+**Method 2: Using environment variables:**
 
-You can also provide the configuration as command-line flags when running the `analyze` or `ambient` commands. The flags will override any values set in the `.env` file.
+```bash
+export API_BASE=http://localhost:11434/v1
+export MODEL=gpt-4
+./digital-twin-proxy analyze --since 1h
+```
 
-- `--model`: The name of the model to use (e.g., `gpt-4`, `llama3.2:3b`).
-- `--api-base`: The base URL of the OpenAI-compatible API endpoint.
-- `--api-key`: The API key for the service, if required.
+**Method 3: Using command-line flags:**
+
+```bash
+./digital-twin-proxy analyze \
+  --since 1h \
+  --api-base http://localhost:11434/v1 \
+  --model gpt-4 \
+  --max-items 1000
+```
 
 #### 3. Verify
 
