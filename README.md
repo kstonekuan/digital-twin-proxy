@@ -94,13 +94,13 @@ You can configure the application using three methods (in order of priority):
 
 ##### Available Configuration Options
 
-| Option | Environment Variable | CLI Flag | Default | Description |
-|--------|---------------------|----------|---------|-------------|
-| API Base URL | `API_BASE` | `--api-base` | (required) | OpenAI-compatible API endpoint |
-| API Key | `API_KEY` | `--api-key` | (optional) | API key for the service |
-| Model | `MODEL` | `--model` | `gpt-oss:20b` | LLM model to use |
-| Ambient Interval | `AMBIENT_INTERVAL` | `--interval` | `30` | Seconds between analyses (ambient mode) |
-| Max Analysis Items | `MAX_ANALYSIS_ITEMS` | `--max-items` | `500` | Maximum URLs to analyze per batch |
+| Option             | Environment Variable | CLI Flag      | Default       | Description                             |
+| ------------------ | -------------------- | ------------- | ------------- | --------------------------------------- |
+| API Base URL       | `API_BASE`           | `--api-base`  | (required)    | OpenAI-compatible API endpoint          |
+| API Key            | `API_KEY`            | `--api-key`   | (optional)    | API key for the service                 |
+| Model              | `MODEL`              | `--model`     | `gpt-oss:20b` | LLM model to use                        |
+| Ambient Interval   | `AMBIENT_INTERVAL`   | `--interval`  | `30`          | Seconds between analyses (ambient mode) |
+| Max Analysis Items | `MAX_ANALYSIS_ITEMS` | `--max-items` | `500`         | Maximum URLs to analyze per batch       |
 
 ##### Configuration Methods
 
@@ -126,7 +126,7 @@ MAX_ANALYSIS_ITEMS=1000
 
 ```bash
 export API_BASE=http://localhost:11434/v1
-export MODEL=gpt-4
+export MODEL=gpt-oss:20b
 ./digital-twin-proxy analyze --since 1h
 ```
 
@@ -136,7 +136,7 @@ export MODEL=gpt-4
 ./digital-twin-proxy analyze \
   --since 1h \
   --api-base http://localhost:11434/v1 \
-  --model gpt-4 \
+  --model gpt-oss:20b \
   --max-items 1000
 ```
 
@@ -169,10 +169,10 @@ Digital Twin Proxy has three main commands:
 ./digital-twin-proxy log
 
 # Analyze traffic from the last hour with a local Ollama model
-./digital-twin-proxy analyze --since 1h --model llama3.2:3b --api-base http://localhost:11434/v1
+./digital-twin-proxy analyze --since 1h --model gpt-oss:20b --api-base http://localhost:11434/v1
 
 # Run in ambient mode, analyzing every 5 minutes with the OpenAI API
-./digital-twin-proxy ambient --interval 300 --model gpt-4 --api-base https://api.openai.com/v1 --api-key $OPENAI_API_KEY
+./digital-twin-proxy ambient --interval 300 --model gpt-5 --api-base https://api.openai.com/v1 --api-key $OPENAI_API_KEY
 ```
 
 ## Development
