@@ -117,7 +117,7 @@ Example `.env` file:
 ```
 API_BASE=http://localhost:11434/v1
 API_KEY=your-api-key-if-needed
-MODEL=llama3.2:3b
+MODEL=gpt-oss:20b
 AMBIENT_INTERVAL=60
 MAX_ANALYSIS_ITEMS=1000
 ```
@@ -149,7 +149,7 @@ Start the proxy in logging mode and visit a website.
 ./target/release/digital-twin-proxy log
 
 # Terminal 2: Tail the logs
-tail -f ~/.local/share/digital-twin-proxy/log.ndjson
+tail -f ~/.local/share/ai-proxy/log.ndjson
 ```
 
 You should see JSON objects representing your web traffic.
@@ -174,6 +174,35 @@ Digital Twin Proxy has three main commands:
 # Run in ambient mode, analyzing every 5 minutes with the OpenAI API
 ./digital-twin-proxy ambient --interval 300 --model gpt-5 --api-base https://api.openai.com/v1 --api-key $OPENAI_API_KEY
 ```
+
+## WSL (Windows Subsystem for Linux) Setup
+
+If you're using WSL, there are additional networking considerations:
+
+1. **Install Squid in WSL:**
+   ```bash
+   sudo apt update
+   sudo apt install squid
+   ```
+
+2. **Configure WSL networking:**
+   - The proxy will run on `127.0.0.1:8888` within WSL
+   - From Windows, you'll need to access it via the WSL IP address
+   - Find your WSL IP: `ip addr show eth0 | grep inet`
+
+3. **Configure Windows browser:**
+   - Set proxy to `<WSL_IP>:8888` (e.g., `172.20.240.2:8888`)
+   - Or use `127.0.0.1:8888` if you set up port forwarding
+
+4. **Optional - Set up port forwarding (Windows PowerShell as Administrator):**
+   ```powershell
+   netsh interface portproxy add v4tov4 listenport=8888 listenaddress=127.0.0.1 connectport=8888 connectaddress=<WSL_IP>
+   ```
+
+5. **Configure WSL firewall (if needed):**
+   ```bash
+   sudo ufw allow 8888
+   ```
 
 ## Development
 
