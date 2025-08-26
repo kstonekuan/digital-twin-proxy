@@ -419,7 +419,32 @@ async fn summarize_with_llm(
 3. **Extract Insights:** What can you infer about the user's current tasks or interests?
 4. **Update Summary:** Merge new insights with existing analysis, prioritizing recent activity
 5. **Be Concise:** Provide a focused summary that highlights key patterns and changes
-6. **Tool Use:** You have a tool `fetch_page_content` that you can use to get the content of a page. Use it if you think a page is particularly interesting or relevant to the user's activity.
+
+**Tool Usage Guidelines:**
+You have a tool `fetch_page_content` to get deeper insights from specific pages. Use it strategically for:
+
+**FETCH WHEN:**
+- Documentation, articles, tutorials, or guides the user is reading
+- New tools, services, or technologies being explored
+- Pages visited multiple times (suggesting importance)
+- Content directly related to apparent work/research patterns
+- Blog posts, papers, or substantive content that reveals user interests
+- Landing pages of new domains that could indicate emerging interests
+
+**DON'T FETCH:**
+- Login/authentication pages (contain no useful content)
+- Search result pages (URLs already show the search intent)
+- Navigation/utility pages (headers, footers, menus)
+- Static resources (images, CSS, JS files, APIs)
+- Tracking/analytics URLs
+- Social media feeds (unless showing specific new interests)
+- Shopping cart/checkout pages
+
+**Decision Criteria:**
+- Will this content help understand the user's current task or goal?
+- Does this URL suggest substantive, readable content?
+- Would fetching this provide context missing from the URL alone?
+- Is this part of a learning or research pattern?
 
 **Output Format:**
 - **Key Patterns:** Main browsing behaviors observed
