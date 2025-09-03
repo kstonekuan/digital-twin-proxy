@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use async_openai::{
     config::OpenAIConfig,
     types::{
+        ChatCompletionMessageToolCall, ChatCompletionRequestMessage,
         ChatCompletionRequestSystemMessageArgs, ChatCompletionRequestToolMessageArgs,
         ChatCompletionRequestUserMessageArgs, ChatCompletionTool, ChatCompletionToolType,
         CreateChatCompletionRequestArgs, FunctionObjectArgs,
@@ -394,22 +395,8 @@ async fn fetch_page_content(url: &str) -> Result<String> {
     Ok(text)
 }
 
-async fn summarize_with_llm(
-    previous: &str,
-    items: &[String],
-    model: &str,
-    api_base: &str,
-    api_key: Option<&str>,
-) -> Result<String> {
-    let mut config = OpenAIConfig::new().with_api_base(api_base);
-    if let Some(key) = api_key {
-        config = config.with_api_key(key);
-    }
-    let client = Client::with_config(config);
-
-    let mut messages = vec![
-        ChatCompletionRequestSystemMessageArgs::default()
-            .content(format!("You are an intelligent browsing behavior analyst. Your task is to analyze web traffic patterns and provide meaningful insights.
+fn create_system_prompt(previous: &str) -> String {
+    format!("You are an intelligent browsing behavior analyst. Your task is to analyze web traffic patterns and provide meaningful insights.
 
 **Current Analysis:**
 {}\n
@@ -452,17 +439,12 @@ You have a tool `fetch_page_content` to get deeper insights from specific pages.
 - **Notable Changes:** How activity has evolved from the previous summary
 
 Provide your analysis:",
-                if previous.is_empty() { "None - this is the first analysis." } else { previous }
-            ))
-            .build()?
-            .into(),
-        ChatCompletionRequestUserMessageArgs::default()
-            .content(format!("**New Activity:**\n{}", items.join("\n")))
-            .build()?
-            .into(),
-    ];
+        if previous.is_empty() { "None - this is the first analysis." } else { previous }
+    )
+}
 
-    let tools = vec![ChatCompletionTool {
+fn create_fetch_tool() -> Result<Vec<ChatCompletionTool>> {
+    Ok(vec![ChatCompletionTool {
         r#type: ChatCompletionToolType::Function,
         function: FunctionObjectArgs::default()
             .name("fetch_page_content")
@@ -478,7 +460,57 @@ Provide your analysis:",
                 "required": ["url"]
             }))
             .build()?,
-    }];
+    }])
+}
+
+async fn handle_tool_calls(
+    tool_calls: &[ChatCompletionMessageToolCall],
+    messages: &mut Vec<ChatCompletionRequestMessage>,
+) -> Result<()> {
+    for tool_call in tool_calls {
+        let function_name = &tool_call.function.name;
+        if function_name == "fetch_page_content" {
+            let args: serde_json::Value = serde_json::from_str(&tool_call.function.arguments)?;
+            if let Some(url) = args.get("url").and_then(|u| u.as_str()) {
+                let content = fetch_page_content(url).await?;
+                messages.push(
+                    ChatCompletionRequestToolMessageArgs::default()
+                        .content(content)
+                        .tool_call_id(tool_call.id.clone())
+                        .build()?
+                        .into(),
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+async fn summarize_with_llm(
+    previous: &str,
+    items: &[String],
+    model: &str,
+    api_base: &str,
+    api_key: Option<&str>,
+) -> Result<String> {
+    let mut config = OpenAIConfig::new().with_api_base(api_base);
+    if let Some(key) = api_key {
+        config = config.with_api_key(key);
+    }
+    let client = Client::with_config(config);
+
+    let mut messages = vec![
+        ChatCompletionRequestSystemMessageArgs::default()
+            .content(create_system_prompt(previous))
+            .build()?
+            .into(),
+        ChatCompletionRequestUserMessageArgs::default()
+            .content(format!("**New Activity:**\n{}", items.join("\n")))
+            .build()?
+            .into(),
+    ];
+
+    let tools = create_fetch_tool()?;
 
     let request = CreateChatCompletionRequestArgs::default()
         .model(model)
@@ -490,22 +522,7 @@ Provide your analysis:",
     let response = client.chat().create(request).await?;
 
     if let Some(tool_calls) = response.choices[0].message.tool_calls.as_ref() {
-        for tool_call in tool_calls {
-            let function_name = &tool_call.function.name;
-            if function_name == "fetch_page_content" {
-                let args: serde_json::Value = serde_json::from_str(&tool_call.function.arguments)?;
-                if let Some(url) = args.get("url").and_then(|u| u.as_str()) {
-                    let content = fetch_page_content(url).await?;
-                    messages.push(
-                        ChatCompletionRequestToolMessageArgs::default()
-                            .content(content)
-                            .tool_call_id(tool_call.id.clone())
-                            .build()?
-                            .into(),
-                    );
-                }
-            }
-        }
+        handle_tool_calls(tool_calls, &mut messages).await?;
 
         let request = CreateChatCompletionRequestArgs::default()
             .model(model)
